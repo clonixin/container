@@ -13,6 +13,9 @@
 #include <unordered_map>
 #include <memory>
 #include <typeindex>
+#include <type_traits>
+
+#include "utils/TypeDescriptors.hpp"
 
 #ifndef containers_ContainerFwd_hpp__
 #include "builders/IBuilder.hpp"
@@ -31,7 +34,13 @@ namespace clonixin {
             virtual Container &addClass(std::unique_ptr<builders::IBuilder> &&builder);
             virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder);
 
+            template <class T> Container &addSingleton(std::unique_ptr<T> &&obj);
+
+            template <class TypeDesc, typename... As> std::enable_if_t<TypeDesc::is_polymorph, Container &> addType();
+            template <class TypeDesc, typename... As> std::enable_if_t<!TypeDesc::is_polymorph, Container &> addType();
+
             std::any getInstance(std::type_index t) const;
+            template <class T> std::shared_ptr<T> getInstance() const;
         private:
             mutable std::unordered_map<std::type_index, std::any> _singleton_map;
             std::unordered_map<std::type_index, std::unique_ptr<builders::IBuilder>> _builder_map;
@@ -63,6 +72,55 @@ namespace clonixin {
         return *this;
     }
 
+    template <class T>
+    Container & Container::addSingleton(std::unique_ptr<T> &&obj) {
+        std::type_index idx = typeid(T);
+
+        _singleton_map[idx] = std::shared_ptr(obj);
+        _life_map[idx] = Lifetime::Singleton;
+
+        return *this;
+    }
+
+    template <class TypeDesc, typename... As>
+    std::enable_if_t<!TypeDesc::is_polymorph, Container &> Container::addType() {
+        using T = typename TypeDesc::type;
+
+        static_assert(std::is_constructible_v<T, std::shared_ptr<As>...>,
+                "Cannot construct type.");
+
+        std::type_index idx = typeid(T);
+
+        _builder_map[idx] = std::make_unique<builders::GenericBuilder<T, As...>>();
+
+        if constexpr (TypeDesc::is_singleton)
+            _life_map[idx] = Lifetime::Singleton;
+        else
+            _life_map[idx] = Lifetime::Transient;
+
+        return *this;
+    }
+
+    template <class TypeDesc, typename... As>
+    std::enable_if_t<TypeDesc::is_polymorph, Container &> Container::addType() {
+        using T = typename TypeDesc::type;
+        using B = typename TypeDesc::base;
+
+        static_assert(std::is_constructible_v<T, std::shared_ptr<As>...>,
+                "Cannot construct type.");
+
+        std::type_index idx = typeid(B);
+
+        _builder_map[idx] = std::make_unique<builders::AbstractBuilder<B, T, As...>>();
+
+        if constexpr (TypeDesc::is_singleton)
+            _life_map[idx] = Lifetime::Singleton;
+        else
+            _life_map[idx] = Lifetime::Transient;
+
+        return *this;
+    }
+
     std::any Container::getInstance(std::type_index t) const {
         using namespace std::literals;
         if (_life_map.find(t) == _life_map.end())
@@ -79,6 +137,13 @@ namespace clonixin {
             default:
                 throw std::runtime_error("Unexpected lifetime found for type : "s + t.name());
         }
+    }
+
+    template <typename T>
+    std::shared_ptr<T> Container::getInstance() const {
+        std::type_index idx = typeid(T);
+
+        return std::any_cast<std::shared_ptr<T>>(getInstance(idx));
     }
 
 #endif
