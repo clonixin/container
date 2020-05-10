@@ -3,7 +3,7 @@
 **
 ** \author Phantomas <phantomas@phantomas.xyz>
 ** \date Created on: 2020-05-08 16:10
-** \date Last update: 2020-05-09 18:22
+** \date Last update: 2020-05-10 03:30
 */
 
 #ifndef containers_Container_hpp__
@@ -15,13 +15,14 @@
 #include <typeindex>
 #include <type_traits>
 
-#include "utils/TypeDescriptors.hpp"
 
 #ifndef containers_ContainerFwd_hpp__
 #include "builders/IBuilder.hpp"
 #include "builders/GenericBuilder.hpp"
 #include "builders/AbstractBuilder.hpp"
 #endif
+
+#include "utils/TypeDescriptors.hpp"
 
 namespace clonixin {
 #ifndef __CONTAINER_DECLARED
@@ -50,6 +51,9 @@ namespace clonixin {
 #endif
 
 #ifndef __CONTAINER_FWD_ONLY
+
+#include "utils/ValueWrapper.hpp"
+
     Container & Container::addClass(std::unique_ptr<builders::IBuilder> &&builder) {
         auto ti= builder->getTypeIndex();
 
@@ -86,8 +90,11 @@ namespace clonixin {
     std::enable_if_t<!TypeDesc::is_polymorph, Container &> Container::addType() {
         using T = typename TypeDesc::type;
 
-        static_assert(std::is_constructible_v<T, std::shared_ptr<As>...>,
-                "Cannot construct type.");
+        {
+            using namespace clonixin::utils::value::_internals;
+            static_assert(std::is_constructible_v<T, typename __value_unwrapper<As>::type...>,
+                    "Cannot construct type.");
+        }
 
         std::type_index idx = typeid(T);
 
@@ -106,8 +113,11 @@ namespace clonixin {
         using T = typename TypeDesc::type;
         using B = typename TypeDesc::base;
 
-        static_assert(std::is_constructible_v<T, std::shared_ptr<As>...>,
-                "Cannot construct type.");
+        {
+            using namespace clonixin::utils::value::_internals;
+            static_assert(std::is_constructible_v<T, typename __value_unwrapper<As>::type...>,
+                    "Cannot construct type.");
+        }
 
         std::type_index idx = typeid(B);
 
