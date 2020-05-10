@@ -3,11 +3,15 @@
 **
 ** \author Phantomas <phantomas@phantomas.xyz>
 ** \date Created on: 2020-05-08 23:33
-** \date Last update: 2020-05-10 03:38
+** \date Last update: 2020-05-10 19:24
 */
 
 #ifndef utils_ValueWrapper_hpp__
 #define utils_ValueWrapper_hpp__
+
+#if !defined(__clang__) && defined(__GNUC__)
+    # define __COMP_GCC__ 1
+#endif
 
 #include <type_traits>
 
@@ -15,6 +19,14 @@
 
 namespace clonixin::utils::value {
     namespace _internals {
+        template <typename T> struct __type_of_member {
+            using type = T;
+        };
+
+        template <class T, typename M> struct __type_of_member<M T::*> {
+            using type = M;
+        };
+
         template <typename T>
         struct __value_wrap {
             using type = T;
@@ -30,28 +42,39 @@ namespace clonixin::utils::value {
         template <typename T>
         struct __value_unwrapper<T, std::void_t<
             std::enable_if_t<std::is_base_of_v<__value_wrap<typename T::type>, T>>
-            //std::enable_if_t<std::is_fundamental_v<decltype(T::value(std::declval<Container const &>()))>>
         >> {
             using type = typename T::type;
 
-            static type value(Container const &c) { return T::value(c); }
-
+            static constexpr type value(Container const &c) { return T::value; }
         };
+    }
 
-        template <typename T, T Val> struct __value_type: public _internals::__value_wrap<decltype(Val)> {
-            using type = typename _internals::__value_wrap<decltype(Val)>::type;
-            static constexpr type value(Container const &c) { return Val; }
-        };
+    template <auto val, typename T = decltype(val)> struct Direct: public _internals::__value_wrap<T> {
+        using type = T;
+        static constexpr type value = val;
+    };
 
+    template <typename T, typename R = decltype(std::declval<T>().value)> struct Indirect : public _internals::__value_wrap<R> {
+        using type = R;
+        static constexpr type value = T().value;
+    };
+
+#ifdef __COMP_GCC__
+    namespace _internals {
         template <char... chars>
         using __litt_string = std::integer_sequence<char, chars...>;
     }
 
-    template <auto T>
-    using Value = _internals::__value_type<decltype(T), T>;
-
     template <typename T, T... chars>
     constexpr _internals::__litt_string<chars ...> operator ""_str() { return {}; }
+
+    template <typename>
+    struct _string_impl {};
+
+    template <char... chars>
+        struct _string_impl<_internals::__litt_string<chars...>> {
+            static constexpr std::string value() { return std::string{chars...}; };
+        };
 
     template <typename>
     struct String {};
@@ -59,10 +82,27 @@ namespace clonixin::utils::value {
     template <char... chars>
     struct String<_internals::__litt_string<chars...>> : public _internals::__value_wrap<std::string> {
         using type = std::string;
-        static std::string value(Container const &c) { return {chars...}; }
+        static std::string value;
     };
 
-#define X_VALUEDECLARATOR(Type, Name) template <Type val> using Name = _internals::__value_type<Type, val>
+    template<char... chars>
+    std::string String<_internals::__litt_string<chars...>>::value = _string_impl<_internals::__litt_string<chars...>>::value();
+#else
+    namespace _internals {
+        template <char... chars>
+        using __litt_string = std::integer_sequence<char, chars...>;
+    }
+
+    template <typename T, T... chars>
+    constexpr _internals::__litt_string<chars ...> operator ""_str() { return {}; }
+
+    template <typename T>
+        struct String {
+            static_assert(!std::is_same_v<T, T>, "String value_type is unsupported by clang. Use Indirect instead.");
+        };
+#endif
+
+#define X_VALUEDECLARATOR(Type, Name) template <Type val> using Name = Direct<val, Type>
     X_VALUEDECLARATOR(bool, Bool);
 
     X_VALUEDECLARATOR(short, Short);
