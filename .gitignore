@@ -1,0 +1,16 @@
+
+srcs/save/
+
+docs/html/
+
+docs/latex/
+
+docs/xml/
+
+reports/
+
+tests/.deps/
+
+tests/objs/
+
+bin/
