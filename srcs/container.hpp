@@ -10,7 +10,7 @@ namespace clonixin {
     /**
     ** \brief Default instance, if one want to use it as a Singleton.
     */
-    clonixin::Container defaultContainer() {
+    inline clonixin::Container &defaultContainer() {
         static clonixin::Container c;
         return c;
     }
