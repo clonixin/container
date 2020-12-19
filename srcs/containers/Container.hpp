@@ -15,22 +15,19 @@
 #include <typeindex>
 #include <type_traits>
 
-
 #ifndef containers_ContainerFwd_hpp__
 #include "builders/IBuilder.hpp"
 #include "builders/GenericBuilder.hpp"
 #include "builders/AbstractBuilder.hpp"
 #endif
 
-#include "utils/TypeDescriptors.hpp"
+#include "type_desc.hpp"
 
 namespace clonixin {
 #ifndef __CONTAINER_DECLARED
 #define __CONTAINER_DECLARED
 
     class Container {
-        private:
-            enum struct Lifetime { Singleton, Transient };
         public:
             virtual Container &addClass(std::unique_ptr<builders::IBuilder> &&builder);
             virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder);
@@ -46,7 +43,7 @@ namespace clonixin {
             mutable std::unordered_map<std::type_index, std::any> _singleton_map;
             std::unordered_map<std::type_index, std::unique_ptr<builders::IBuilder>> _builder_map;
 
-            std::unordered_map<std::type_index, Lifetime> _life_map;
+            std::unordered_map<std::type_index, type_desc::Lifetime> _life_map;
     };
 #endif
 
@@ -60,7 +57,7 @@ namespace clonixin {
         if (_life_map.find(ti) != _life_map.end())
             ;// throw, maybe ?
         _builder_map[ti] = std::move(builder);
-        _life_map[ti] = Lifetime::Transient;
+        _life_map[ti] = type_desc::Lifetime::Transient;
 
         return *this;
     }
@@ -71,7 +68,7 @@ namespace clonixin {
         if (_life_map.find(builder->getTypeIndex()) != _life_map.end())
             ;// throw, maybe ?
         _builder_map[ti] = std::move(builder);
-        _life_map[ti] = Lifetime::Singleton;
+        _life_map[ti] = type_desc::Lifetime::Singleton;
 
         return *this;
     }
@@ -81,7 +78,7 @@ namespace clonixin {
         std::type_index idx = typeid(T);
 
         _singleton_map[idx] = std::shared_ptr(obj);
-        _life_map[idx] = Lifetime::Singleton;
+        _life_map[idx] = type_desc::Lifetime::Singleton;
 
         return *this;
     }
@@ -100,10 +97,7 @@ namespace clonixin {
 
         _builder_map[idx] = std::make_unique<builders::GenericBuilder<T, As...>>();
 
-        if constexpr (TypeDesc::is_singleton)
-            _life_map[idx] = Lifetime::Singleton;
-        else
-            _life_map[idx] = Lifetime::Transient;
+        _life_map[idx] = TypeDesc::lifetime;
 
         return *this;
     }
@@ -123,10 +117,7 @@ namespace clonixin {
 
         _builder_map[idx] = std::make_unique<builders::AbstractBuilder<B, T, As...>>();
 
-        if constexpr (TypeDesc::is_singleton)
-            _life_map[idx] = Lifetime::Singleton;
-        else
-            _life_map[idx] = Lifetime::Transient;
+        _life_map[idx] = TypeDesc::lifetime;
 
         return *this;
     }
