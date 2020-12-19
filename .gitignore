@@ -14,3 +14,7 @@ tests/.deps/
 tests/objs/
 
 bin/
+
+.ccls
+
+compile_flags.txt
