@@ -3,7 +3,7 @@
 **
 ** \author Phantomas <phantomas@phantomas.xyz>
 ** \date Created on: 2020-05-08 16:10
-** \date Last update: 2020-06-08 22:11
+** \date Last update: 2021-01-17 13:36
 ** \copyright GNU Lesser Public Licence v3
 */
 
@@ -17,6 +17,8 @@
 #include <string>
 #include <typeindex>
 #include <type_traits>
+
+#include "./tag.hpp"
 
 #ifndef containers_ContainerFwd_hpp__
 #include "builders/IBuilder.hpp"
@@ -67,6 +69,7 @@ namespace clonixin {
     */
     class Container {
         public:
+            virtual ~Container() {}
             virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder);
             virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder);
 
@@ -75,11 +78,15 @@ namespace clonixin {
             template <class TypeDesc, typename... As> std::enable_if_t<TypeDesc::is_polymorph, Container &> addType();
             template <class TypeDesc, typename... As> std::enable_if_t<!TypeDesc::is_polymorph, Container &> addType();
 
-            std::any getInstancePtr(std::type_index t) const;
-            std::any getInstanceVal(std::type_index t) const;
+            virtual std::any getInstance(tag::container::ptr_t, std::type_index t) const;
+            virtual std::any getInstance(tag::container::rref_t, std::type_index t) const;
 
             template <class T> std::enable_if_t<std::negation_v<std::is_rvalue_reference<T>>, std::shared_ptr<T>> getInstance() const;
             template <class T> std::enable_if_t<std::is_rvalue_reference_v<T>, T &&> getInstance() const;
+
+        private:
+            virtual std::any _typeNotFound(tag::container::ptr_t, std::type_index) const;
+            virtual std::any _typeNotFound(tag::container::rref_t, std::type_index) const;
 
         private:
             mutable std::unordered_map<std::type_index, std::any> _singleton_map;
@@ -251,14 +258,11 @@ namespace clonixin {
     ** Thrown if an invalid lifetime is found.
     **
     */
-    inline std::any Container::getInstancePtr(std::type_index t) const {
+    inline std::any Container::getInstance(tag::container::ptr_t, std::type_index t) const {
         using type_desc::Lifetime;
         using Error = clonixin::exceptions::ContainerError;
         if (_life_map.find(t) == _life_map.end())
-            throw exceptions::ContainerException<Error::TypeNotFound>(
-                exceptions::CONTAINER_ERROR_DESC[(size_t)Error::TypeNotFound] + t.name(),
-                __FILE__, __LINE__
-            );
+            _typeNotFound(tag::container::ptr, t);
 
         Lifetime l = _life_map.at(t);
         switch (l) {
@@ -293,14 +297,11 @@ namespace clonixin {
     ** Thrown if an invalid lifetime is found.
     **
     */
-    inline std::any Container::getInstanceVal(std::type_index t) const {
+    inline std::any Container::getInstance(tag::container::rref_t, std::type_index t) const {
         using type_desc::Lifetime;
         using Error = clonixin::exceptions::ContainerError;
         if (_life_map.find(t) == _life_map.end())
-            throw exceptions::ContainerException<Error::TypeNotFound>(
-                exceptions::CONTAINER_ERROR_DESC[(size_t)Error::TypeNotFound] + t.name(),
-                __FILE__, __LINE__
-            );
+            _typeNotFound(tag::container::rref, t);
 
         Lifetime l = _life_map.at(t);
         switch (l) {
@@ -342,7 +343,7 @@ namespace clonixin {
     inline std::enable_if_t<std::negation_v<std::is_rvalue_reference<T>>, std::shared_ptr<T>> Container::getInstance() const {
         std::type_index idx = typeid(T);
 
-        return std::any_cast<std::shared_ptr<T>>(getInstancePtr(idx));
+        return std::any_cast<std::shared_ptr<T>>(getInstance(tag::container::ptr, idx));
     }
 
     /**
@@ -367,7 +368,23 @@ namespace clonixin {
     inline std::enable_if_t<std::is_rvalue_reference_v<T>, T &&> Container::getInstance() const {
         std::type_index idx = typeid(T);
 
-        return std::any_cast<T &&>(getInstanceVal(idx));
+        return std::any_cast<T &&>(getInstance(tag::container::rref, idx));
+    }
+
+    inline std::any Container::_typeNotFound(tag::container::ptr_t, std::type_index t) const {
+        using Error = clonixin::exceptions::ContainerError;
+        throw exceptions::ContainerException<Error::TypeNotFound>(
+            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::TypeNotFound] + t.name(),
+            __FILE__, __LINE__
+        );
+    }
+
+    inline std::any Container::_typeNotFound(tag::container::rref_t, std::type_index t) const {
+        using Error = clonixin::exceptions::ContainerError;
+        throw exceptions::ContainerException<Error::TypeNotFound>(
+            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::TypeNotFound] + t.name(),
+            __FILE__, __LINE__
+        );
     }
 
 #endif
