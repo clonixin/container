@@ -3,7 +3,7 @@
 **
 ** \author Phantomas <phantomas@phantomas.xyz>
 ** \date Created on: 2020-05-08 16:10
-** \date Last update: 2021-01-17 13:36
+** \date Last update: 2021-06-09 00:45
 ** \copyright GNU Lesser Public Licence v3
 */
 
@@ -18,16 +18,16 @@
 #include <typeindex>
 #include <type_traits>
 
-#include "./tag.hpp"
-
 #ifndef containers_ContainerFwd_hpp__
 #include "builders/IBuilder.hpp"
 #include "builders/GenericBuilder.hpp"
 #include "builders/AbstractBuilder.hpp"
 #endif
 
+#include "./tag.hpp"
 #include "exceptions/ContainerException.hpp"
 #include "type_desc.hpp"
+#include "utils/type_traits.hpp"
 
 namespace clonixin {
 #ifndef __CONTAINER_DECLARED
@@ -71,9 +71,19 @@ namespace clonixin {
         public:
             virtual ~Container() {}
             virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder);
+            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::once_t);
+            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t);
+            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t);
+
             virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder);
+            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::once_t);
+            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t);
+            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t);
 
             template <class T> Container &addInstance(std::unique_ptr<T> &&obj);
+            template <class T> Container &addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::once_t);
+            template <class T> Container &addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::ignore_t);
+            template <class T> Container &addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::override_t);
 
             template <class TypeDesc, typename... As> std::enable_if_t<TypeDesc::is_polymorph, Container &> addType();
             template <class TypeDesc, typename... As> std::enable_if_t<!TypeDesc::is_polymorph, Container &> addType();
@@ -87,6 +97,9 @@ namespace clonixin {
         private:
             virtual std::any _typeNotFound(tag::container::ptr_t, std::type_index) const;
             virtual std::any _typeNotFound(tag::container::rref_t, std::type_index) const;
+            template <typename Tag> void _addTransient(std::unique_ptr<builders::IBuilder> &&builder, Tag);
+            template <typename Tag> void _addSingleton(std::unique_ptr<builders::IBuilder> &&builder, Tag);
+            template <class T, typename Tag> void _addInstance(std::unique_ptr<T> &&obj, Tag);
 
         private:
             mutable std::unordered_map<std::type_index, std::any> _singleton_map;
@@ -103,18 +116,156 @@ namespace clonixin {
     /**
     ** \brief Register a class builder to the container.
     **
+    ** If the type build by this builder already exists, it will be overridden.
+    **
     ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
     **
     ** \return The current Container instance.
     */
     inline Container & Container::addTransient(std::unique_ptr<builders::IBuilder> &&builder) {
+        _addTransient(std::move(builder), tag::container::duplicate::over);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a class builder to the container.
+    **
+    ** If the type build by this builder already exists, the function throws.
+    **
+    ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
+    ** \param tag a value to disambiguate function call.
+    **
+    ** \throw exceptions::ContainerException<exceptions::ContainerError::BadLifetime>
+    ** Thrown if the type has already been registered.
+    **
+    ** \return The current Container instance.
+    */
+    inline Container &Container::addTransient(std::unique_ptr<builders::IBuilder> &&builder,
+            [[maybe_unused]]tag::container::duplicate::once_t tag) {
+        _addTransient(std::move(builder), tag);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a class builder to the container.
+    **
+    ** If the type build by this builder already exists, the function fails silently.
+    **
+    ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
+    ** \param tag a value to disambiguate function call.
+    **
+    ** \return The current Container instance.
+    */
+    inline Container &Container::addTransient(std::unique_ptr<builders::IBuilder> &&builder,
+            [[maybe_unused]]tag::container::duplicate::ignore_t tag) {
+        _addTransient(std::move(builder), tag);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a class builder to the container.
+    **
+    ** If the type build by this builder already exists, it will be overridden.
+    **
+    ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
+    ** \param tag a value to disambiguate function call.
+    **
+    ** \return The current Container instance.
+    */
+    inline Container &Container::addTransient(std::unique_ptr<builders::IBuilder> &&builder,
+            [[maybe_unused]]tag::container::duplicate::override_t tag) {
+        _addTransient(std::move(builder), tag);
+        return *this;
+    }
+
+    template <typename Tag>
+    inline void Container::_addTransient(std::unique_ptr<builders::IBuilder> &&builder, [[maybe_unused]]Tag) {
         auto ti = builder->getTypeIndex();
 
-        if (_life_map.find(ti) != _life_map.end())
-            ;// throw, maybe ?
+        using namespace tag::container::duplicate;
+        static_assert(type_traits::is_one_of_v<Tag, once_t, override_t, ignore_t>,
+                "Tag should be one of override_t, throw_t or ignore_t");
+
+        if constexpr (!std::is_same_v<Tag, override_t>) {
+            if (_life_map.find(ti) != _life_map.end()) {
+                if constexpr (std::is_same_v<Tag, tag::container::duplicate::once_t>) {
+                    using type_desc::Lifetime;
+                    using Error = clonixin::exceptions::ContainerError;
+                    throw exceptions::ContainerException<Error::BadLifetime>(
+                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::BadLifetime] + ti.name(),
+                            __FILE__, __LINE__
+                            );
+                } else {
+                    return;
+                }
+            }
+        }
+
         _builder_map[ti] = std::move(builder);
         _life_map[ti] = type_desc::Lifetime::Transient;
 
+        return;
+    }
+
+    /**
+    ** \brief Register a singleton builder to the container
+    **
+    ** If the type build by this builder already exists, it will be overridden.
+    **
+    ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
+    **
+    ** \return The current Container instance.
+    */
+    inline Container & Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder) {
+        _addSingleton(std::move(builder), tag::container::duplicate::over);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a singleton builder to the container
+    **
+    ** If the type build by this builder already exists, the function throws.
+    **
+    ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
+    ** \param tag a value to disambiguate function call.
+    **
+    ** \throw exceptions::ContainerException<exceptions::ContainerError::BadLifetime>
+    ** Thrown if the type has already been registered.
+    **
+    ** \return The current Container instance.
+    */
+    inline Container &Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::once_t tag) {
+        _addSingleton(std::move(builder), tag);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a singleton builder to the container
+    **
+    ** If the type build by this builder already exists, the function fails silently.
+    **
+    ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
+    ** \param tag a value to disambiguate function call.
+    **
+    ** \return The current Container instance.
+    */
+    inline Container &Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t tag) {
+        _addSingleton(std::move(builder), tag);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a singleton builder to the container
+    **
+    ** If the type build by this builder already exists, it will be overridden.
+    **
+    ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
+    ** \param tag a value to disambiguate function call.
+    **
+    ** \return The current Container instance.
+    */
+    inline Container &Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t tag) {
+        _addSingleton(std::move(builder), tag);
         return *this;
     }
 
@@ -125,19 +276,37 @@ namespace clonixin {
     **
     ** \return The current Container instance.
     */
-    inline Container & Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder) {
+    template <typename Tag>
+    void Container::_addSingleton(std::unique_ptr<builders::IBuilder> &&builder, [[maybe_unused]]Tag) {
         auto ti= builder->getTypeIndex();
 
-        if (_life_map.find(builder->getTypeIndex()) != _life_map.end())
-            ;// throw, maybe ?
+        using namespace tag::container::duplicate;
+        static_assert(type_traits::is_one_of_v<Tag, once_t, override_t, ignore_t>,
+                "Tag should be one of override_t, once_t or ignore_t");
+
+
+        if constexpr (!std::is_same_v<Tag, override_t>) {
+            if (_life_map.find(ti) != _life_map.end()) {
+                if constexpr (std::is_same_v<Tag, tag::container::duplicate::once_t>) {
+                    using type_desc::Lifetime;
+                    using Error = clonixin::exceptions::ContainerError;
+                    throw exceptions::ContainerException<Error::BadLifetime>(
+                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::BadLifetime] + ti.name(),
+                            __FILE__, __LINE__
+                            );
+                } else {
+                    return;
+                }
+            }
+        }
         _builder_map[ti] = std::move(builder);
         _life_map[ti] = type_desc::Lifetime::Singleton;
-
-        return *this;
     }
 
     /**
     ** \brief Register a singleton instance in the container.
+    **
+    ** If the type is already exists, it will be overridden.
     **
     ** \param obj The instance to register.
     **
@@ -147,12 +316,96 @@ namespace clonixin {
     */
     template <class T>
     inline Container & Container::addInstance(std::unique_ptr<T> &&obj) {
-        std::type_index idx = typeid(T);
-
-        _singleton_map[idx] = std::shared_ptr(std::forward<std::unique_ptr<T> &&>(obj));
-        _life_map[idx] = type_desc::Lifetime::Singleton;
+        _addInstance(std::move(obj), tag::container::duplicate::over);
 
         return *this;
+    }
+
+    /**
+    ** \brief Register a singleton instance in the container.
+    **
+    ** If the type is already exists, the function throws.
+    **
+    ** \param obj The instance to register.
+    **
+    ** \tparam T Type of the object.
+    **
+    ** \throw exceptions::ContainerException<exceptions::ContainerError::BadLifetime>
+    ** Thrown if the type has already been registered.
+    **
+    ** \return The current Container instance.
+    */
+    template <class T> Container &Container::addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::once_t tag) {
+        _addInstance(std::move(obj), tag);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a singleton instance in the container.
+    **
+    ** If the type is already exists, the function fails silently.
+    **
+    ** \param obj The instance to register.
+    **
+    ** \tparam T Type of the object.
+    **
+    ** \return The current Container instance.
+    */
+    template <class T> Container &Container::addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::ignore_t tag) {
+        _addInstance(std::move(obj), tag);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a singleton instance in the container.
+    **
+    ** If the type is already exists, it will be overridden.
+    **
+    ** \param obj The instance to register.
+    **
+    ** \tparam T Type of the object.
+    **
+    ** \return The current Container instance.
+    */
+    template <class T> Container &Container::addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::override_t tag) {
+        _addInstance(std::move(obj), tag);
+        return *this;
+    }
+
+    /**
+    ** \brief Register a singleton instance in the container.
+    **
+    ** \param obj The instance to register.
+    **
+    ** \tparam T Type of the object.
+    ** \tparam Tag type to disambiguate behavior.
+    **
+    ** \return The current Container instance.
+    */
+    template <class T, typename Tag>
+    inline void Container::_addInstance(std::unique_ptr<T> &&obj, [[maybe_unused]]Tag) {
+        std::type_index ti = typeid(T);
+
+        using namespace tag::container::duplicate;
+        static_assert(type_traits::is_one_of_v<Tag, once_t, override_t, ignore_t>,
+                "Tag should be one of override_t, once_t or ignore_t");
+
+        if constexpr (!std::is_same_v<Tag, override_t>) {
+            if (_life_map.find(ti) != _life_map.end()) {
+                if constexpr (std::is_same_v<Tag, tag::container::duplicate::once_t>) {
+                    using type_desc::Lifetime;
+                    using Error = clonixin::exceptions::ContainerError;
+                    throw exceptions::ContainerException<Error::BadLifetime>(
+                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::BadLifetime] + ti.name(),
+                            __FILE__, __LINE__
+                            );
+                } else {
+                    return;
+                }
+            }
+        }
+        _singleton_map[ti] = std::shared_ptr(std::forward<std::unique_ptr<T> &&>(obj));
+        _life_map[ti] = type_desc::Lifetime::Singleton;
     }
 
     /**
