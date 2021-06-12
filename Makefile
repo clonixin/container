@@ -73,6 +73,8 @@ TEST_SRCS += $(TEST_SRCSDIR)/test_rvalue.cpp
 TEST_SRCS += $(TEST_SRCSDIR)/test_manual.cpp
 TEST_SRCS += $(TEST_SRCSDIR)/test_abstract.cpp
 TEST_SRCS += $(TEST_SRCSDIR)/test_exceptions.cpp
+TEST_SRCS += $(TEST_SRCSDIR)/test_duplicate.cpp
+TEST_SRCS += $(TEST_SRCSDIR)/test_duplicate_manual.cpp
 
 TEST_OBJS = $(patsubst $(TEST_SRCSDIR)/%, $(TEST_OBJSDIR)/%, $(TEST_SRCS:.cpp=.o))
 
