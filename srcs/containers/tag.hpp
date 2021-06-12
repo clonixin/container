@@ -3,7 +3,7 @@
 **
 ** \author Phantomas <phantomas@phantomas.xyz>
 ** \date Created on: 2021-06-08 23:31
-** \date Last update: 2021-06-09 00:26
+** \date Last update: 2021-06-12 23:17
 */
 
 #ifndef containers_tag_hpp__
@@ -52,7 +52,7 @@ namespace clonixin::tag {
             struct ignore_t{};
             inline constexpr once_t once{};
             inline constexpr override_t over{};
-            inline constexpr ignore_t ign{};
+            inline constexpr ignore_t ignore{};
         }
     }
 }

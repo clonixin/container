@@ -3,7 +3,7 @@
 **
 ** \author Phantomas <phantomas@phantomas.xyz>
 ** \date Created on: 2020-05-08 16:10
-** \date Last update: 2021-06-09 00:45
+** \date Last update: 2021-06-13 00:22
 ** \copyright GNU Lesser Public Licence v3
 */
 
@@ -70,23 +70,25 @@ namespace clonixin {
     class Container {
         public:
             virtual ~Container() {}
-            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder);
+            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder) noexcept;
             virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::once_t);
-            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t);
-            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t);
+            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t) noexcept;
+            virtual Container &addTransient(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t) noexcept;
 
-            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder);
+            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder) noexcept;
             virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::once_t);
-            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t);
-            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t);
+            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t) noexcept;
+            virtual Container &addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t) noexcept;
 
-            template <class T> Container &addInstance(std::unique_ptr<T> &&obj);
+            template <class T> Container &addInstance(std::unique_ptr<T> &&obj) noexcept;
             template <class T> Container &addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::once_t);
-            template <class T> Container &addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::ignore_t);
-            template <class T> Container &addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::override_t);
+            template <class T> Container &addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::ignore_t) noexcept;
+            template <class T> Container &addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::override_t) noexcept;
 
-            template <class TypeDesc, typename... As> std::enable_if_t<TypeDesc::is_polymorph, Container &> addType();
-            template <class TypeDesc, typename... As> std::enable_if_t<!TypeDesc::is_polymorph, Container &> addType();
+            template <class TypeDesc, typename... As> Container & addType() noexcept;
+            template <class TypeDesc, typename... As> Container & addType(tag::container::duplicate::once_t);
+            template <class TypeDesc, typename... As> Container & addType(tag::container::duplicate::ignore_t) noexcept;
+            template <class TypeDesc, typename... As> Container & addType(tag::container::duplicate::override_t) noexcept;
 
             virtual std::any getInstance(tag::container::ptr_t, std::type_index t) const;
             virtual std::any getInstance(tag::container::rref_t, std::type_index t) const;
@@ -97,9 +99,10 @@ namespace clonixin {
         private:
             virtual std::any _typeNotFound(tag::container::ptr_t, std::type_index) const;
             virtual std::any _typeNotFound(tag::container::rref_t, std::type_index) const;
-            template <typename Tag> void _addTransient(std::unique_ptr<builders::IBuilder> &&builder, Tag);
-            template <typename Tag> void _addSingleton(std::unique_ptr<builders::IBuilder> &&builder, Tag);
-            template <class T, typename Tag> void _addInstance(std::unique_ptr<T> &&obj, Tag);
+            template <typename Tag> void _addTransient(std::unique_ptr<builders::IBuilder> &&builder, Tag) noexcept(type_traits::is_one_of_v<Tag, tag::ignore_t, tag::override_t>);
+            template <typename Tag> void _addSingleton(std::unique_ptr<builders::IBuilder> &&builder, Tag) noexcept(type_traits::is_one_of_v<Tag, tag::ignore_t, tag::override_t>);
+            template <class T, typename Tag> void _addInstance(std::unique_ptr<T> &&obj, Tag) noexcept(type_traits::is_one_of_v<Tag, tag::ignore_t, tag::override_t>);
+            template <typename Tag, class TypeDesc, typename... As> void _addType() noexcept(type_traits::is_one_of_v<Tag, tag::ignore_t, tag::override_t>);
 
         private:
             mutable std::unordered_map<std::type_index, std::any> _singleton_map;
@@ -122,7 +125,7 @@ namespace clonixin {
     **
     ** \return The current Container instance.
     */
-    inline Container & Container::addTransient(std::unique_ptr<builders::IBuilder> &&builder) {
+    inline Container & Container::addTransient(std::unique_ptr<builders::IBuilder> &&builder) noexcept {
         _addTransient(std::move(builder), tag::container::duplicate::over);
         return *this;
     }
@@ -135,7 +138,7 @@ namespace clonixin {
     ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
     ** \param tag a value to disambiguate function call.
     **
-    ** \throw exceptions::ContainerException<exceptions::ContainerError::BadLifetime>
+    ** \throw exceptions::ContainerException<exceptions::ContainerError::DuplicateType>
     ** Thrown if the type has already been registered.
     **
     ** \return The current Container instance.
@@ -157,7 +160,7 @@ namespace clonixin {
     ** \return The current Container instance.
     */
     inline Container &Container::addTransient(std::unique_ptr<builders::IBuilder> &&builder,
-            [[maybe_unused]]tag::container::duplicate::ignore_t tag) {
+            [[maybe_unused]]tag::container::duplicate::ignore_t tag) noexcept {
         _addTransient(std::move(builder), tag);
         return *this;
     }
@@ -173,26 +176,42 @@ namespace clonixin {
     ** \return The current Container instance.
     */
     inline Container &Container::addTransient(std::unique_ptr<builders::IBuilder> &&builder,
-            [[maybe_unused]]tag::container::duplicate::override_t tag) {
+            [[maybe_unused]]tag::container::duplicate::override_t tag) noexcept {
         _addTransient(std::move(builder), tag);
         return *this;
     }
 
+    /**
+    ** \internal
+    ** \brief Register a class builder to the container
+    **
+    ** Actual implementation. It's templated on the tag types taken by the other addTransient functions.
+    ** Internally, it use compile time introspections and constexpr to remove unnecessary code path.
+    **
+    ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>
+    ** \param tag a value to disambiguate function call.
+    **
+    ** \tparam Tag Type of the tag parameter.
+    **
+    ** \throw clonixin:exceptions::ContainerException<clonixin::exceptions::ContainerError::DuplicateType>
+    ** thrown if Tag is clonixin::tag::container::duplicate::once_t, and the type has already been registered.
+    */
     template <typename Tag>
-    inline void Container::_addTransient(std::unique_ptr<builders::IBuilder> &&builder, [[maybe_unused]]Tag) {
+    inline void Container::_addTransient(std::unique_ptr<builders::IBuilder> &&builder, [[maybe_unused]]Tag tag)
+    noexcept(type_traits::is_one_of_v<Tag, tag::ignore_t, tag::override_t>) {
         auto ti = builder->getTypeIndex();
 
         using namespace tag::container::duplicate;
         static_assert(type_traits::is_one_of_v<Tag, once_t, override_t, ignore_t>,
-                "Tag should be one of override_t, throw_t or ignore_t");
+                "Tag should be one of override_t, once_t or ignore_t");
 
         if constexpr (!std::is_same_v<Tag, override_t>) {
             if (_life_map.find(ti) != _life_map.end()) {
                 if constexpr (std::is_same_v<Tag, tag::container::duplicate::once_t>) {
                     using type_desc::Lifetime;
                     using Error = clonixin::exceptions::ContainerError;
-                    throw exceptions::ContainerException<Error::BadLifetime>(
-                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::BadLifetime] + ti.name(),
+                    throw exceptions::ContainerException<Error::DuplicateType>(
+                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::DuplicateType] + ti.name(),
                             __FILE__, __LINE__
                             );
                 } else {
@@ -216,7 +235,7 @@ namespace clonixin {
     **
     ** \return The current Container instance.
     */
-    inline Container & Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder) {
+    inline Container & Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder) noexcept {
         _addSingleton(std::move(builder), tag::container::duplicate::over);
         return *this;
     }
@@ -229,8 +248,8 @@ namespace clonixin {
     ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
     ** \param tag a value to disambiguate function call.
     **
-    ** \throw exceptions::ContainerException<exceptions::ContainerError::BadLifetime>
-    ** Thrown if the type has already been registered.
+    ** \throw clonixin:exceptions::ContainerException<clonixin::exceptions::ContainerError::DuplicateType>
+    ** thrown if the type has already been registered.
     **
     ** \return The current Container instance.
     */
@@ -249,7 +268,7 @@ namespace clonixin {
     **
     ** \return The current Container instance.
     */
-    inline Container &Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t tag) {
+    inline Container &Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::ignore_t tag) noexcept {
         _addSingleton(std::move(builder), tag);
         return *this;
     }
@@ -264,20 +283,30 @@ namespace clonixin {
     **
     ** \return The current Container instance.
     */
-    inline Container &Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t tag) {
+    inline Container &Container::addSingleton(std::unique_ptr<builders::IBuilder> &&builder, tag::container::duplicate::override_t tag) noexcept {
         _addSingleton(std::move(builder), tag);
         return *this;
     }
 
     /**
-    ** \brief Register a singleton builder to the container
+    ** \internal
+    ** \brief Register a singleton builder to the container.
+    **
+    ** This is the actual implementation of every addSingleton functions.
+    ** The function is templated on the tag type to disambiguate what behavior is needed.
+    ** It then use compile-time introspections and constexpr to remove unneeded code path.
     **
     ** \param builder an rvalue reference to a std::unique_ptr<IBuilder>.
+    ** \param tag a value to disambiguate function call.
     **
-    ** \return The current Container instance.
+    ** \tparam Tag Type of the tag parameter.
+    **
+    ** \throw clonixin:exceptions::ContainerException<clonixin::exceptions::ContainerError::DuplicateType>
+    ** thrown if Tag is clonixin::tag::container::duplicate::once_t, and the type has already been registered.
     */
     template <typename Tag>
-    void Container::_addSingleton(std::unique_ptr<builders::IBuilder> &&builder, [[maybe_unused]]Tag) {
+    void Container::_addSingleton(std::unique_ptr<builders::IBuilder> &&builder, [[maybe_unused]]Tag)
+    noexcept(type_traits::is_one_of_v<Tag, tag::ignore_t, tag::override_t>) {
         auto ti= builder->getTypeIndex();
 
         using namespace tag::container::duplicate;
@@ -290,8 +319,8 @@ namespace clonixin {
                 if constexpr (std::is_same_v<Tag, tag::container::duplicate::once_t>) {
                     using type_desc::Lifetime;
                     using Error = clonixin::exceptions::ContainerError;
-                    throw exceptions::ContainerException<Error::BadLifetime>(
-                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::BadLifetime] + ti.name(),
+                    throw exceptions::ContainerException<Error::DuplicateType>(
+                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::DuplicateType] + ti.name(),
                             __FILE__, __LINE__
                             );
                 } else {
@@ -315,7 +344,7 @@ namespace clonixin {
     ** \return The current Container instance.
     */
     template <class T>
-    inline Container & Container::addInstance(std::unique_ptr<T> &&obj) {
+    inline Container & Container::addInstance(std::unique_ptr<T> &&obj) noexcept {
         _addInstance(std::move(obj), tag::container::duplicate::over);
 
         return *this;
@@ -330,8 +359,9 @@ namespace clonixin {
     **
     ** \tparam T Type of the object.
     **
-    ** \throw exceptions::ContainerException<exceptions::ContainerError::BadLifetime>
-    ** Thrown if the type has already been registered.
+    **
+    ** \throw clonixin:exceptions::ContainerException<clonixin::exceptions::ContainerError::DuplicateType>
+    ** thrown if the type has already been registered.
     **
     ** \return The current Container instance.
     */
@@ -351,7 +381,7 @@ namespace clonixin {
     **
     ** \return The current Container instance.
     */
-    template <class T> Container &Container::addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::ignore_t tag) {
+    template <class T> Container &Container::addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::ignore_t tag) noexcept {
         _addInstance(std::move(obj), tag);
         return *this;
     }
@@ -367,7 +397,7 @@ namespace clonixin {
     **
     ** \return The current Container instance.
     */
-    template <class T> Container &Container::addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::override_t tag) {
+    template <class T> Container &Container::addInstance(std::unique_ptr<T> &&obj, tag::container::duplicate::override_t tag) noexcept {
         _addInstance(std::move(obj), tag);
         return *this;
     }
@@ -380,10 +410,15 @@ namespace clonixin {
     ** \tparam T Type of the object.
     ** \tparam Tag type to disambiguate behavior.
     **
+    ** \throw clonixin:exceptions::ContainerException<clonixin::exceptions::ContainerError::DuplicateType>
+    ** thrown if Tag is clonixin::tag::container::duplicate::once_t, and the type has already been registered.
+    **
     ** \return The current Container instance.
     */
     template <class T, typename Tag>
-    inline void Container::_addInstance(std::unique_ptr<T> &&obj, [[maybe_unused]]Tag) {
+    inline void Container::_addInstance(std::unique_ptr<T> &&obj, [[maybe_unused]]Tag)
+    noexcept(type_traits::is_one_of_v<Tag, tag::ignore_t, tag::override_t>)
+    {
         std::type_index ti = typeid(T);
 
         using namespace tag::container::duplicate;
@@ -395,8 +430,8 @@ namespace clonixin {
                 if constexpr (std::is_same_v<Tag, tag::container::duplicate::once_t>) {
                     using type_desc::Lifetime;
                     using Error = clonixin::exceptions::ContainerError;
-                    throw exceptions::ContainerException<Error::BadLifetime>(
-                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::BadLifetime] + ti.name(),
+                    throw exceptions::ContainerException<Error::DuplicateType>(
+                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::DuplicateType] + ti.name(),
                             __FILE__, __LINE__
                             );
                 } else {
@@ -409,7 +444,7 @@ namespace clonixin {
     }
 
     /**
-    ** \brief Register a non polymorphic type to the container.
+    ** \brief Register a type to the container.
     **
     ** Calling this function create a builder, that will create every needed
     ** instance to create the instance describe by the TypeDesc argument.
@@ -430,35 +465,48 @@ namespace clonixin {
     ** \return The current Container instance.
     */
     template <class TypeDesc, typename... As>
-    inline std::enable_if_t<!TypeDesc::is_polymorph, Container &> Container::addType() {
-        using T = typename TypeDesc::type;
-
-        {
-            using clonixin::utils::value::_internals::__value_unwrapper;
-            static_assert(std::is_constructible_v<T, typename __value_unwrapper<As>::type...>,
-                    "Cannot construct type.");
-        }
-
-        std::type_index idx = typeid(T);
-
-        _builder_map[idx] = std::make_unique<builders::GenericBuilder<T, As...>>();
-
-        _life_map[idx] = TypeDesc::lifetime;
-
+    inline Container & Container::addType() noexcept {
+        _addType<tag::container::duplicate::override_t, TypeDesc, As...>();
         return *this;
     }
 
     /**
-    ** \brief Register a polymorphic type to the container.
+    ** \brief Register a type to the container.
     **
     ** Calling this function create a builder, that will create every needed
     ** instance to create the instance describe by the TypeDesc argument.
     ** A TypeDesc is needed to specify the type and lifetime, as well as to
     ** discriminate between polymorphic and non polymorphic type registration.
     **
-    ** This version is called when the TypeDesc represent a polymorphic type.
-    ** more precisely, when the Descriptor contains a base types, as well as
-    ** an implementation type for it.
+    ** Variadic template arguments are there to specify the type of each
+    ** parameter. There must be a matching constructor in the type represented
+    ** by TypeDesc.
+    ** It's also possible to specify some values, either by passing a Direct<T>
+    ** or an Indirect<T> type, that'll wrap the value.
+    **
+    ** \tparam TypeDesc A Type-descriptor type.
+    ** \tparam As Types of the class' constructor arguments, that will be built
+    ** on the fly or retrieved, as well as value wrapping types of the
+    ** argument that cannot be built that way (strings, algebraic types, etc.)
+    **
+    ** \throw clonixin:exceptions::ContainerException<clonixin::exceptions::ContainerError::DuplicateType>
+    ** thrown if the type has already been registered.
+    **
+    ** \return The current Container instance.
+    */
+    template <class TypeDesc, typename... As>
+    inline Container & Container::addType(tag::container::duplicate::once_t) {
+        _addType<tag::container::duplicate::once_t, TypeDesc, As...>();
+        return *this;
+    }
+
+    /**
+    ** \brief Register a type to the container.
+    **
+    ** Calling this function create a builder, that will create every needed
+    ** instance to create the instance describe by the TypeDesc argument.
+    ** A TypeDesc is needed to specify the type and lifetime, as well as to
+    ** discriminate between polymorphic and non polymorphic type registration.
     **
     ** Variadic template arguments are there to specify the type of each
     ** parameter. There must be a matching constructor in the type represented
@@ -474,9 +522,68 @@ namespace clonixin {
     ** \return The current Container instance.
     */
     template <class TypeDesc, typename... As>
-    inline std::enable_if_t<TypeDesc::is_polymorph, Container &> Container::addType() {
+    inline Container & Container::addType(tag::container::duplicate::ignore_t) noexcept {
+        _addType<tag::container::duplicate::ignore_t, TypeDesc, As...>();
+        return *this;
+    }
+
+    /**
+    ** \brief Register a type to the container.
+    **
+    ** Calling this function create a builder, that will create every needed
+    ** instance to create the instance describe by the TypeDesc argument.
+    ** A TypeDesc is needed to specify the type and lifetime, as well as to
+    ** discriminate between polymorphic and non polymorphic type registration.
+    **
+    ** Variadic template arguments are there to specify the type of each
+    ** parameter. There must be a matching constructor in the type represented
+    ** by TypeDesc.
+    ** It's also possible to specify some values, either by passing a Direct<T>
+    ** or an Indirect<T> type, that'll wrap the value.
+    **
+    ** \tparam TypeDesc A Type-descriptor type.
+    ** \tparam As Types of the class' constructor arguments, that will be built
+    ** on the fly or retrieved, as well as value wrapping types of the
+    ** argument that cannot be built that way (strings, algebraic types, etc.)
+    **
+    ** \return The current Container instance.
+    */
+    template <class TypeDesc, typename... As>
+    inline Container & Container::addType(tag::container::duplicate::override_t) noexcept {
+        _addType<tag::container::duplicate::override_t, TypeDesc, As...>();
+        return *this;
+    }
+
+    /**
+    ** \brief Register a type to the container.
+    **
+    ** Calling this function create a builder, that will create every needed
+    ** instance to create the instance describe by the TypeDesc argument.
+    ** A TypeDesc is needed to specify the type and lifetime, as well as to
+    ** discriminate between polymorphic and non polymorphic type registration.
+    **
+    ** Variadic template arguments are there to specify the type of each
+    ** parameter. There must be a matching constructor in the type represented
+    ** by TypeDesc.
+    ** It's also possible to specify some values, either by passing a Direct<T>
+    ** or an Indirect<T> type, that'll wrap the value.
+    **
+    ** \tparam Tag a type to select a behavior in case the type was already registered.
+    ** \tparam TypeDesc A Type-descriptor type.
+    ** \tparam As Types of the class' constructor arguments, that will be built
+    ** on the fly or retrieved, as well as value wrapping types of the
+    ** argument that cannot be built that way (strings, algebraic types, etc.)
+    **
+    ** \throw clonixin:exceptions::ContainerException<clonixin::exceptions::ContainerError::DuplicateType>
+    ** thrown if Tag is clonixin::tag::container::duplicate::once_t, and the type has already been registered.
+    **
+    ** \return The current Container instance.
+    */
+    template <typename Tag, class TypeDesc, typename... As>
+    inline void Container::_addType()
+    noexcept(type_traits::is_one_of_v<Tag, tag::ignore_t, tag::override_t>) {
         using T = typename TypeDesc::type;
-        using B = typename TypeDesc::base;
+        using R = typename TypeDesc::regs;
 
         {
             using clonixin::utils::value::_internals::__value_unwrapper;
@@ -484,13 +591,34 @@ namespace clonixin {
                     "Cannot construct type.");
         }
 
-        std::type_index idx = typeid(B);
+        using namespace tag::container::duplicate;
+        static_assert(type_traits::is_one_of_v<Tag, once_t, override_t, ignore_t>,
+                "Tag should be one of override_t, once_t or ignore_t");
 
-        _builder_map[idx] = std::make_unique<builders::AbstractBuilder<B, T, As...>>();
+        std::type_index ti = typeid(R);
 
-        _life_map[idx] = TypeDesc::lifetime;
+        if constexpr (!std::is_same_v<Tag, override_t>) {
+            if (_life_map.find(ti) != _life_map.end()) {
+                if constexpr (std::is_same_v<Tag, tag::container::duplicate::once_t>) {
+                    using type_desc::Lifetime;
+                    using Error = clonixin::exceptions::ContainerError;
+                    throw exceptions::ContainerException<Error::DuplicateType>(
+                            exceptions::CONTAINER_ERROR_DESC[(size_t)Error::DuplicateType] + ti.name(),
+                            __FILE__, __LINE__
+                            );
+                } else {
+                    return;
+                }
+            }
+        }
 
-        return *this;
+        if constexpr (TypeDesc::is_polymorph) {
+            using B = typename TypeDesc::base;
+            _builder_map[ti] = std::make_unique<builders::AbstractBuilder<B, T, As...>>();
+        } else {
+            _builder_map[ti] = std::make_unique<builders::GenericBuilder<T, As...>>();
+        }
+        _life_map[ti] = TypeDesc::lifetime;
     }
 
     /**

@@ -3,7 +3,7 @@
 **
 ** \author Phantomas <phantomas@phantomas.xyz>
 ** \date Created on: 2020-05-08 23:29
-** \date Last update: 2020-05-18 16:48
+** \date Last update: 2021-06-09 13:43
 ** \copyright GNU Lesser Public Licence v3
 */
 
@@ -43,6 +43,7 @@ namespace clonixin::type_desc {
 
             using base = B;
             using type = T;
+            using regs = B;
         };
 
         /**
@@ -60,6 +61,7 @@ namespace clonixin::type_desc {
         struct __type_desc<_lifetime, B, T, std::void_t<
             std::enable_if_t<!std::is_same_v<B, T> && !std::is_abstract_v<T> && std::is_base_of_v<B, T>>
             >> {
+                using regs = B;
                 using base = B;
                 using type = T;
 
@@ -92,6 +94,7 @@ namespace clonixin::type_desc {
             std::enable_if_t<!std::is_abstract_v<T>>
         >> {
             using type = T;
+            using regs = T;
 
             /**
             ** \brief Boolean set to true if B is to be defined as a
